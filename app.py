@@ -155,15 +155,31 @@ def main():
     # 依存オブジェクトを初期化
     f_adapter = CultivationForecastAPI()
     h_adapter = CultivationHistoricalAPI()
-    # Note: FORECAST_LOCATION_ID is used here as per the spec, though it's for the mock forecast.
     forecaster = WeatherForecaster(f_adapter, h_adapter, Config.FORECAST_LOCATION_ID)
     manager = BettingManager()
 
     st.title("🌧️ 1週間分の雨予報チャレンジ (PoC)")
     st.markdown("明日の東京は雨が降る？降らない？ 1週間先までのみんなの予想を見てみよう！")
 
-    weekly_forecasts = forecaster.get_weekly_forecast()
+    # --- 結果発表セクション (モック表示) ---
+    st.subheader("🎉 昨日の結果発表 (モック)")
     jst_now = datetime.now(timezone(Config.TIMEZONE))
+    yesterday = jst_now.date() - timedelta(days=1)
+
+    # モックデータで結果を固定表示
+    mock_result = {
+        'is_rain_result': True,
+        'precipitation_mm': 15.5
+    }
+    result_icon = "💧 **雨が降りました**" if mock_result['is_rain_result'] else "☀️ **雨は降りませんでした**"
+    st.markdown(f"**結果 ({yesterday.strftime('%Y-%m-%d')}):** {result_icon}")
+    st.write(f"観測された降水量: {mock_result['precipitation_mm']} mm")
+    st.caption("データソース: モックデータ (表示確認用)")
+    st.markdown("---")
+
+    # --- 予報と投票セクション ---
+    st.header("🗓️ 今後の雨予報チャレンジ")
+    weekly_forecasts = forecaster.get_weekly_forecast()
     today = jst_now.date()
 
     for day_forecast in weekly_forecasts:
@@ -199,22 +215,7 @@ def main():
         else:
             st.write("まだ投票がありません。")
 
-        # 結果発表セクション (昨日のみ)
-        yesterday = today - timedelta(days=1)
-        if forecast_date == yesterday:
-            st.markdown("---")
-            st.subheader("🎉 結果発表")
-            result = forecaster.get_historical_result(date_str)
-            if 'error' in result:
-                st.error(f"結果の取得に失敗しました: {result['error']}")
-            else:
-                result_icon = "💧 **雨が降りました**" if result['is_rain_result'] else "☀️ **雨は降りませんでした**"
-                st.markdown(f"**結果:** {result_icon}")
-                st.write(f"観測された降水量: {result['precipitation_mm']} mm")
-                st.caption(f"データソース: api.cultivationdata.net (地点: {Config.HISTORICAL_LOCATION_ID})")
-
         st.markdown("---")
-
 
     # 法的要件
     st.caption(
