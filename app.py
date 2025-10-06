@@ -16,21 +16,27 @@ class Config:
 # 2. アダプター層 (アダプターパターン適用)
 # 2.1 抽象クラス (インターフェース)
 class ForecastAdapter(ABC):
+    """予報データ取得の抽象インターフェース"""
     @abstractmethod
     def fetch_forecast_data(self, location_id: str) -> dict:
+        """指定地点の予報データ（生JSON）を取得する"""
         pass
 
 class HistoricalAdapter(ABC):
+    """過去観測データ取得の抽象インターフェース"""
     @abstractmethod
     def fetch_historical_rainfall(self, location_id: str) -> dict:
+        """指定地点の観測データ（生JSON）を取得する"""
         pass
 
 # 2.2 具象クラス (実装)
 class CultivationForecastAPI(ForecastAdapter):
+    """将来の予報APIのモック実装"""
     def fetch_forecast_data(self, location_id: str) -> dict:
         return {'status': 'mock_data', 'message': '予報API未実装'}
 
 class CultivationHistoricalAPI(HistoricalAdapter):
+    """過去データAPIの実装"""
     BASE_URL = "https://api.cultivationdata.net/past"
 
     def fetch_historical_rainfall(self, location_id: str) -> dict:
@@ -40,7 +46,7 @@ class CultivationHistoricalAPI(HistoricalAdapter):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            st.error(f"APIへの接続に失敗しました: {e}")
+            # st.errorはUIに影響するため、ここではエラー情報を辞書で返すに留める
             return {'error': str(e), 'data_status': 'failed'}
 
 # 3. WeatherForecaster クラス (データ変換・判定ロジック)
@@ -51,16 +57,8 @@ class WeatherForecaster:
         self._location_id = location_id
 
     def _transform_historical_data(self, raw_data: dict, target_day: date) -> dict:
-        # This is a placeholder transformation.
-        # The actual key for precipitation needs to be identified from the real API response.
-        # For PoC, we assume the API returns a simple structure.
-        # Example for a hypothetical structure:
-        # precipitation_mm = raw_data.get('daily_data', {}).get(target_day.strftime('%Y-%m-%d'), {}).get('rainfall_mm', 0.0)
-
-        # Based on the provided API URL, the actual data structure is likely different.
-        # Let's assume a key 'precipitation' exists for the target date for now.
-        precipitation_mm = raw_data.get('precipitation', 0.0) # Placeholder
-
+        # PoCのため、APIからの生データに'precipitation'キーがあると仮定
+        precipitation_mm = raw_data.get('precipitation', 0.0)
         return {
             'date': target_day.strftime('%Y-%m-%d'),
             'precipitation_mm': precipitation_mm,
@@ -86,34 +84,12 @@ class WeatherForecaster:
 
     def get_historical_result(self, date_str: str) -> dict:
         target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        jst_now = datetime.now(timezone(Config.TIMEZONE))
-
-        # This check is conceptual. The /past API fetches "yesterday's" data.
-        # A more robust implementation might be needed depending on when this runs.
-        yesterday = (jst_now - timedelta(days=1)).date()
-        if target_date != yesterday:
-            # For this PoC, we will still attempt to fetch but acknowledge the logic gap.
-            # In a real app, you might return an error or adjust the call.
-            pass
-
         raw_data = self._h_adapter.fetch_historical_rainfall(Config.HISTORICAL_LOCATION_ID)
 
         if raw_data.get('data_status') == 'failed' or 'error' in raw_data:
             return {'error': 'データ取得失敗'}
 
-        # The API documentation is needed to correctly parse this.
-        # Let's assume the API returns data for the previous day and we can extract it.
-        # For the PoC, we will simulate this transformation.
-        # A sample successful response might look like:
-        # { "id": "47662", "datetime": "2023-10-26T00:00:00+09:00", "precipitation": 5.5, ... }
-
-        # Let's simulate finding the correct data for the target date.
-        # In a real scenario, we'd parse the 'raw_data' list/dict.
-        # For this PoC, we'll just pass the raw data to the transformer.
-        # The key 'rain_amount_extracted' from the spec is implemented as 'precipitation' here.
-
-        transformed_data = self._transform_historical_data(raw_data, target_date)
-        return transformed_data
+        return self._transform_historical_data(raw_data, target_date)
 
 # 4. BettingManager クラス (投票・オッズ管理)
 class BettingManager:
@@ -184,7 +160,6 @@ def main():
 
     for day_forecast in weekly_forecasts:
         date_str = day_forecast['date']
-        forecast_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
         st.subheader(f"{date_str} の予報と投票")
 
@@ -194,17 +169,16 @@ def main():
         st.caption(f"出典: {day_forecast['source']}")
 
         # 投票セクション
-        if forecast_date > today:
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"雨が降ると思う", key=f"rain_{date_str}"):
-                    manager.record_bet(date_str, 'rain')
-                    st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(f"雨が降ると思う", key=f"rain_{date_str}"):
+                manager.record_bet(date_str, 'rain')
+                st.rerun()
 
-            with col2:
-                if st.button(f"降らないと思う", key=f"no_rain_{date_str}"):
-                    manager.record_bet(date_str, 'no_rain')
-                    st.rerun()
+        with col2:
+            if st.button(f"降らないと思う", key=f"no_rain_{date_str}"):
+                manager.record_bet(date_str, 'no_rain')
+                st.rerun()
 
         # オッズの表示
         odds = manager.get_odds(date_str)
